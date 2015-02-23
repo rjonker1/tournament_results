@@ -52,13 +52,21 @@ WinnerPlayerId int,
 LoserPlayerId int);
 
 
-
-
-
 --create view OpponentMatchWins(
 --Id SERIAL primary key not null,
 --PlayerId int not null,
 --OppenentId int not null);
+
+--Seed Data
+--1. ResultTypes
+insert into ResultTypes(name) values('Win');
+insert into ResultTypes(name) values('Loss');
+insert into ResultTypes(name) values('Tie');
+insert into ResultTypes(name) values('Bye');
+
+--2. Tournament
+insert into Tournaments(name) values('Tournament A')
+
 
 
 
