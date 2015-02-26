@@ -53,7 +53,6 @@ Byes int DEFAULT 0 not null);
 create table Matches(
 Id SERIAL primary key not null,
 TournamentId int not null,
-PairingId int not null,
 ResultTypeId int not null,
 WinnerPlayerId int,
 LoserPlayerId int);
@@ -66,8 +65,7 @@ LoserPlayerId int);
 
 --Seed Data
 --1. ResultTypes
-insert into ResultTypes(name) values('Win');
-insert into ResultTypes(name) values('Loss');
+insert into ResultTypes(name) values('Standard');
 insert into ResultTypes(name) values('Tie');
 insert into ResultTypes(name) values('Bye');
 

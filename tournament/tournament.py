@@ -18,7 +18,8 @@ def deleteMatches():
     try:
         connection = connect()
         cursor = connection.cursor()
-        cursor.execute('delete from matches')
+        cursor.execute('truncate matches')
+        connection.commit()
     except psycopg2.DatabaseError, e:
         print 'An error occurred deleting matches %s' % e
     finally:
@@ -32,7 +33,8 @@ def deletePlayers():
     try:
         connection = connect()
         cursor = connection.cursor()
-        cursor.execute('delete from players')
+        cursor.execute('truncate players')
+        connection.commit()
     except psycopg2.DatabaseError, e:
         print 'An error occurred deleting players %s' % e
     finally:
@@ -46,7 +48,7 @@ def countPlayers():
     try:
         connection = connect()
         cursor = connection.cursor()
-        cursor.execute('select count(id) from players')
+        cursor.execute('select count(p.id) from players p;')
         result = cursor.fetchone()
         return result[0]
     except psycopg2.DatabaseError, e:
@@ -68,9 +70,12 @@ def registerPlayer(name):
     try:
         connection = connect()
         cursor = connection.cursor()
-        cursor.execute('insert into players(fullname) values (%s);', (name))        
+        cursor.execute('insert into players(fullname) values (%s) returning id;', (name,))
+        playerId = cursor.fetchone()
+        cursor.execute('insert into playerstandings(tournamentid, playerid, standing, wins, losses, ties, byes)values (1, %s,((select count(p.id) from players p)), 0, 0, 0, 0);', (playerId,))
+        connection.commit()
     except psycopg2.DatabaseError, e:
-        print 'An error occurred getting a count of the players %s' % e
+        print 'An error occurred registering a player %s' % e
     finally:
         if connection:
             connection.close()
@@ -89,6 +94,22 @@ def playerStandings():
         wins: the number of matches the player has won
         matches: the number of matches the player has played
     """
+    connection = None
+    standings = []
+    try:
+        connection = connect()
+        cursor = connection.cursor()
+        cursor.execute('select p.id,p.fullname,(select count(mw.winnerplayerid) from matches mw where mw.winnerplayerid = p.id) wins, ((select count(mw.winnerplayerid)'
+                       'from matches mw where mw.winnerplayerid = p.id) + (select count(mw.loserplayerid) from matches mw where mw.loserplayerid = p.id)) matches from players p;')
+        rows = cursor.fetchall()
+        for row in rows:
+            standings.append(row)
+        return standings
+    except psycopg2.DatabaseError, e:
+        print 'An error occurred getting a list of player standings %s' % e
+    finally:
+        if connection:
+            connection.close()
 
 
 def reportMatch(winner, loser):
@@ -98,6 +119,18 @@ def reportMatch(winner, loser):
       winner:  the id number of the player who won
       loser:  the id number of the player who lost
     """
+    connection = None
+    try:
+        connection = connect()
+        cursor = connection.cursor()
+        cursor.execute('insert into matches(tournamentid, resulttypeid, winnerplayerid, loserplayerid) VALUES (1,(select id from resulttypes where name = %(standard)s), '
+                       '%(winner)s, %(loser)s);', {'winner' : winner,'loser' : loser, 'standard' : 'Standard'})
+        connection.commit()
+    except psycopg2.DatabaseError, e:
+        print 'An error occurred reporting a match %s' % e
+    finally:
+        if connection:
+            connection.close()
  
  
 def swissPairings():
