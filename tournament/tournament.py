@@ -8,20 +8,52 @@ import psycopg2
 
 def connect():
     """Connect to the PostgreSQL database.  Returns a database connection."""
-    return psycopg2.connect("dbname=tournament")
+    #return psycopg2.connect("dbname=tournament")
+    return psycopg2.connect(database="tournament", user="postgres", password="bullseye", host="127.0.0.1", port="5432")
 
 
 def deleteMatches():
     """Remove all the match records from the database."""
+    connection = None
+    try:
+        connection = connect()
+        cursor = connection.cursor()
+        cursor.execute('delete from matches')
+    except psycopg2.DatabaseError, e:
+        print 'An error occurred deleting matches %s' % e
+    finally:
+        if connection:
+            connection.close()   
 
 
 def deletePlayers():
     """Remove all the player records from the database."""
+    connection = None
+    try:
+        connection = connect()
+        cursor = connection.cursor()
+        cursor.execute('delete from players')
+    except psycopg2.DatabaseError, e:
+        print 'An error occurred deleting players %s' % e
+    finally:
+        if connection:
+            connection.close()
 
 
 def countPlayers():
     """Returns the number of players currently registered."""
-
+    connection = None
+    try:
+        connection = connect()
+        cursor = connection.cursor()
+        cursor.execute('select count(id) from players')
+        result = cursor.fetchone()
+        return result[0]
+    except psycopg2.DatabaseError, e:
+        print 'An error occurred getting a count of the players %s' % e
+    finally:
+        if connection:
+            connection.close()
 
 def registerPlayer(name):
     """Adds a player to the tournament database.
@@ -32,6 +64,16 @@ def registerPlayer(name):
     Args:
       name: the player's full name (need not be unique).
     """
+    connection = None
+    try:
+        connection = connect()
+        cursor = connection.cursor()
+        cursor.execute('insert into players(fullname) values (%s);', (name))        
+    except psycopg2.DatabaseError, e:
+        print 'An error occurred getting a count of the players %s' % e
+    finally:
+        if connection:
+            connection.close()
 
 
 def playerStandings():
