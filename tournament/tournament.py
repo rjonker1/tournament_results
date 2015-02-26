@@ -140,6 +140,15 @@ def reportMatch(winner, loser):
         cursor.execute('update playerstandings ps set standing = playerstanding.newstanding from (select distinct ps_b.id, (ps_b.wins / '
                        ' (case when (ps_b.losses + ps_b.byes) = 0 then 1 else (ps_b.losses + ps_b.byes) end)) winlossratio, count(*) over (order by ps_b.id) as newstanding from playerstandings ps_b '
                        ' order by winlossratio desc) as playerstanding where ps.id = playerstanding.id')
+        #TODO: Need to insert the new swiss pairings
+        cursor.execute('update swisspairings set playerbid = (%s), paired = true where playeraid != 0 and paired = false and completed = false and matchid = 0 and playerbid = 0 RETURNING playerbid;', (winner,))
+        winnerPaired = cursor.fetchone()
+        if winnerPaired == None:
+            cursor.execute('insert into swisspairings(tournamentid, playeraid, playerbid, paired, completed, matchid) values (1,(%s),0, false, false, 0);', (winner,))
+        cursor.execute('update swisspairings set playerbid = (%s), paired = true where playeraid != 0 and paired = false and completed = false and matchid = 0 and playerbid = 0 RETURNING playerbid;', (loser,))
+        loserPairedId = cursor.fetchone()
+        if loserPairedId == None:
+            cursor.execute('insert into swisspairings(tournamentid, playeraid, playerbid, paired, completed, matchid) values (1,(%s),0, false, false, 0);', (loser,))
         connection.commit()
     except psycopg2.DatabaseError, e:
         print 'An error occurred reporting a match %s' % e
@@ -163,5 +172,21 @@ def swissPairings():
         id2: the second player's unique id
         name2: the second player's name
     """
+    connection = None
+    pairings = []
+    try:
+        connection = connect()
+        cursor = connection.cursor()
+        cursor.execute('select p.id id1 ,p.fullname name1, p2.id id2, p2.fullname name2 from swisspairings sp join players p on p.id = sp.playeraid join players p2 on p2.id = sp.playerbid '
+                       ' where paired = true and completed = false and matchid = 0')
+        rows = cursor.fetchall()
+        for row in rows:
+            pairings.append(row)
+        return pairings
+    except psycopg2.DatabaseError, e:
+        print 'An error occurred getting next list of swiss parings %s' % e
+    finally:
+        if connection:
+            connection.close()
 
 
