@@ -36,7 +36,10 @@ create table SwissPairings(
 Id SERIAL primary key not null,
 TournamentId int not null,
 PlayerAId int not null,
-PlayerBId int not null);
+PlayerBId int not null,
+Paired boolean DEFAULT false not null,
+Completed boolean DEFAULT false not null,
+MatchId int DEFAULT 0 not null);
 
 --5. Player standings to keep track of each players standing (or ranking) per tournament
 create table PlayerStandings(
