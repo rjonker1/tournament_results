@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# 
+#
 # tournament.py -- implementation of a Swiss-system tournament
 #
 
@@ -24,7 +24,7 @@ def deleteMatches():
         print 'An error occurred deleting matches %s' % e
     finally:
         if connection:
-            connection.close()   
+            connection.close()
 
 
 def deletePlayers():
@@ -61,10 +61,10 @@ def countPlayers():
 
 def registerPlayer(name):
     """Adds a player to the tournament database.
-  
+
     The database assigns a unique serial id number for the player.  (This
     should be handled by your SQL database schema, not in your Python code.)
-  
+
     Args:
       name: the player's full name (need not be unique).
     """
@@ -118,6 +118,40 @@ def playerStandings():
             connection.close()
 
 
+def setNextPairing(player, cursor, connection):
+    """Gets the next pairing for a player closest to their ranking.
+
+    Args:
+        player: the id number of the player to find a pairing for
+        cursor: the current cursor object
+        connection: the current connection object
+
+    """
+    availablePairings = []
+    updated = 0
+    cursor.execute('select playerId, standing from ((select playerId, standing from playerstandings where standing >= (select standing from playerstandings ps where ps.playerid = %(player)s) '
+                   ' and playerid not in (%(player)s,(select winnerplayerid as playerid from matches where loserplayerid = %(player)s union select loserplayerid from matches where winnerplayerid = %(player)s)) '
+                   ' order by standing limit 1) union (select playerId, standing from playerstandings where standing < (select standing from playerstandings ps where ps.playerid = %(player)s) '
+                   ' and playerid not in (%(player)s,(select winnerplayerid as playerid from matches where loserplayerid = %(player)s union select loserplayerid from matches where winnerplayerid = %(player)s)) '
+                   ' order by standing desc limit 1)) as ps order by standing', {'player' : player})
+    rows = cursor.fetchall()          
+    for row in rows:
+        cursor.execute('select count(id) from swisspairings where completed = false and matchid = 0 and playerbid in(%(player)s,%(playerToPair)s) and playeraid in (%(player)s,%(playerToPair)s)'
+                       , {'player' : player, 'playerToPair' : row[0]})
+        isPaired = cursor.fetchone()
+        if(isPaired[0] > 0):
+            continue       
+        
+        while(updated == 0):            
+            cursor.execute('update swisspairings set playerbid = %(player)s, paired = true where playeraid = %(playerToPair)s and completed = false and paired=false and matchid = 0 RETURNING playerbid;',
+                           {'player' : player, 'playerToPair' : row[0]})
+            updated = cursor.rowcount;
+            cursor.execute('insert into swisspairings(tournamentid, playeraid, playerbid, paired, completed, matchid) values (1,(%s),0, false, false, 0);', (player,))            
+            updated = cursor.rowcount;
+        
+    connection.commit()
+
+
 def reportMatch(winner, loser):
     """Records the outcome of a single match between two players.
 
@@ -137,34 +171,31 @@ def reportMatch(winner, loser):
                        {'winner' : winner,'loser' : loser, 'matchid' : matchId })
         cursor.execute('update playerstandings set wins = wins + 1 where playerId = (%s)', (winner,))
         cursor.execute('update playerstandings set losses = losses + 1 where playerId = (%s)', (loser,))
-        cursor.execute('update playerstandings ps set standing = playerstanding.newstanding from (select distinct ps_b.id, (ps_b.wins / '
-                       ' (case when (ps_b.losses + ps_b.byes) = 0 then 1 else (ps_b.losses + ps_b.byes) end)) winlossratio, count(*) over (order by ps_b.id) as newstanding from playerstandings ps_b '
-                       ' order by winlossratio desc) as playerstanding where ps.id = playerstanding.id')
-        #TODO: Need to insert the new swiss pairings
-        cursor.execute('update swisspairings set playerbid = (%s), paired = true where playeraid != 0 and paired = false and completed = false and matchid = 0 and playerbid = 0 RETURNING playerbid;', (winner,))
-        winnerPaired = cursor.fetchone()
-        if winnerPaired == None:
-            cursor.execute('insert into swisspairings(tournamentid, playeraid, playerbid, paired, completed, matchid) values (1,(%s),0, false, false, 0);', (winner,))
-        cursor.execute('update swisspairings set playerbid = (%s), paired = true where playeraid != 0 and paired = false and completed = false and matchid = 0 and playerbid = 0 RETURNING playerbid;', (loser,))
-        loserPairedId = cursor.fetchone()
-        if loserPairedId == None:
-            cursor.execute('insert into swisspairings(tournamentid, playeraid, playerbid, paired, completed, matchid) values (1,(%s),0, false, false, 0);', (loser,))
+        cursor.execute('update playerstandings set standing = newstanding from ( '
+                       ' select id, row_number() over (order by win_ratio desc) as newstanding from ( '
+                       ' select distinct id, ((ps_b.wins  + ps_b.byes + (ps_b.ties/2)) / (case when (ps_b.losses + (ps_b.ties/2)) = 0 then 1 else (ps_b.losses + (ps_b.ties/2)) end)) win_ratio '
+                       ' from playerstandings ps_b order by win_ratio desc ) as win_loss) as standings'
+                       ' where standings.id = playerstandings.id')
         connection.commit()
+        #Get available players to pair against
+        setNextPairing(winner,cursor,connection)
+        setNextPairing(loser,cursor,connection)
+        #connection.commit()
     except psycopg2.DatabaseError, e:
         print 'An error occurred reporting a match %s' % e
     finally:
         if connection:
             connection.close()
- 
- 
+
+
 def swissPairings():
     """Returns a list of pairs of players for the next round of a match.
-  
+
     Assuming that there are an even number of players registered, each player
     appears exactly once in the pairings.  Each player is paired with another
     player with an equal or nearly-equal win record, that is, a player adjacent
     to him or her in the standings.
-  
+
     Returns:
       A list of tuples, each of which contains (id1, name1, id2, name2)
         id1: the first player's unique id
@@ -177,6 +208,8 @@ def swissPairings():
     try:
         connection = connect()
         cursor = connection.cursor()
+        cursor.execute('delete from swisspairings where playerbid = 0 and paired = false and completed = false and matchid = 0;')
+        connection.commit()
         cursor.execute('select p.id id1 ,p.fullname name1, p2.id id2, p2.fullname name2 from swisspairings sp join players p on p.id = sp.playeraid join players p2 on p2.id = sp.playerbid '
                        ' where paired = true and completed = false and matchid = 0')
         rows = cursor.fetchall()
@@ -184,7 +217,7 @@ def swissPairings():
             pairings.append(row)
         return pairings
     except psycopg2.DatabaseError, e:
-        print 'An error occurred getting next list of swiss parings %s' % e
+        print 'An error occurred getting next list of parings %s' % e
     finally:
         if connection:
             connection.close()

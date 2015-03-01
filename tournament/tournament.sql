@@ -47,6 +47,7 @@ Id SERIAL primary key not null,
 TournamentId int not null,
 PlayerId int not null,
 Standing int,
+Result char(1)
 Wins int DEFAULT 0 not null,
 Losses int DEFAULT 0 not null,
 Ties int DEFAULT 0 not null,
