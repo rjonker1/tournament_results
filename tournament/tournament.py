@@ -12,7 +12,7 @@ def connect():
     This connection must point to a database on your machine
 
     """
-    return psycopg2.connect("dbname=tournament")
+    return psycopg2.connect("dbname=tournament")    
 
 def deleteMatches():
     """Remove all the match records from the database."""
@@ -126,13 +126,26 @@ def playerStandings():
         if connection:
             connection.close()
 
+def reportTiedMatch(cursor, player, matchId):
+    """ Records a tied matche between two players.
 
-def reportMatch(winner, loser):
+    Args:
+        cursor: current cursor object
+        player: id of the player who tied the match
+        matchId: id of the match
+    
+    """
+    cursor.execute('insert into matchplayers(matchid, playerid,result) values(%(match)s, %(player)s, (select type from resulttypes where type = %(result)s limit 1));'
+                   ,{'player' : player,'match' : matchId, 'result' : 'T' })
+    
+
+def reportMatch(winner, loser, tied):
     """Records the outcome of a single match between two players.
 
     Args:
       winner:  the id number of the player who won
       loser:  the id number of the player who lost
+      tied: boolean to indicate if the match was tied
     """
     connection = None
     try:
@@ -142,16 +155,21 @@ def reportMatch(winner, loser):
         #insert the match information
         cursor.execute('insert into matches(tournamentid)values (1)RETURNING id;')
         matchId = cursor.fetchone()
-        cursor.execute('insert into matchplayers(matchid, playerid,result) values(%(match)s, %(player)s, (select type from resulttypes where type = %(result)s limit 1));'
-                       ,{'player' : winner,'match' : matchId, 'result' : 'W' })
-        cursor.execute('insert into matchplayers(matchid, playerid,result) values(%(match)s, %(player)s, (select type from resulttypes where type = %(result)s limit 1));'
-                       ,{'player' : loser,'match' : matchId, 'result' : 'L' })
+        if(tied == True):
+            #update both players with a tied results
+            reportTiedMatch(cursor,winner,matchId)
+            reportTiedMatch(cursor,loser,matchId)
+        else:
+            cursor.execute('insert into matchplayers(matchid, playerid,result) values(%(match)s, %(player)s, (select type from resulttypes where type = %(result)s limit 1));'
+                           ,{'player' : winner,'match' : matchId, 'result' : 'W' })
+            cursor.execute('insert into matchplayers(matchid, playerid,result) values(%(match)s, %(player)s, (select type from resulttypes where type = %(result)s limit 1));'
+                           ,{'player' : loser,'match' : matchId, 'result' : 'L' })
         
         #udate the pairings with the completed match
         cursor.execute('update pairings set completed = true, matchid = %(match)s where playerid = %(player)s and paired = true and matchid = 0 and round = (select max(round) from pairings);'
                        ,{'player' : winner,'match' : matchId})
         cursor.execute('update pairings set completed = true, matchid = %(match)s where playerid = %(player)s and paired = true and matchid = 0 and round = (select max(round) from pairings);'
-                       ,{'player' : loser,'match' : matchId})
+                       ,{'player' : loser,'match' : matchId})        
         
         #update the standings for the loser.
         #reset their wins, losses, etc. from their previous matches
