@@ -13,16 +13,12 @@
 -- You can write comments in this file by starting them with two dashes, like
 -- these lines here.
 
---1. Drop Database if neccessary
+--*****SQL SCRIPTS TO CREATE TABLES FOR DATABSE TOURNAMENT*****
+
+--0. Drop Database if neccessary
 --DROP DATABASE Tournaments  
 
---CREATE DATABASE tournament
---  WITH OWNER = postgres
---       ENCODING = 'UTF8'
---       TABLESPACE = pg_default
---       LC_COLLATE = 'English_United States.1252'
---       LC_CTYPE = 'English_United States.1252'
---       CONNECTION LIMIT = -1;
+--CREATE DATABASE tournament;
 
 
 --1. Tournaments Table to store different tournaments 
@@ -30,6 +26,7 @@ create table Tournaments(
 Id SERIAL primary key not null,
 Name text not null
 );
+
 --2. Result Types to hold different result types e.g. win, loss, tie, bye
 create table ResultTypes(
 Type char(1) primary key not null,
