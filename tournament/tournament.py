@@ -18,8 +18,8 @@ def deleteMatches():
     try:
         connection = connect()
         cursor = connection.cursor()
-        cursor.execute('truncate matchPlayers')
-        cursor.execute('truncate matches')
+        cursor.execute('delete from matchPlayers')
+        cursor.execute('delete from matches')
         connection.commit()
     except psycopg2.DatabaseError, e:
         print 'An error occurred deleting matches %s' % e
@@ -34,9 +34,9 @@ def deletePlayers():
     try:
         connection = connect()
         cursor = connection.cursor()
-        cursor.execute('truncate swisspairings')
-        cursor.execute('truncate playerstandings')
-        cursor.execute('truncate players')
+        cursor.execute('delete from pairings')
+        cursor.execute('delete from playerstandings')
+        cursor.execute('delete from players')
         connection.commit()
     except psycopg2.DatabaseError, e:
         print 'An error occurred deleting players %s' % e
@@ -76,10 +76,11 @@ def registerPlayer(name):
         cursor.execute('insert into players(fullname) values (%s) returning id;', (name,))
         playerId = cursor.fetchone()
         cursor.execute('insert into playerstandings(tournamentid, playerid, standing, wins, losses, ties, byes)values (1, %s,((select count(p.id) from players p)), 0, 0, 0, 0);', (playerId,))
-        cursor.execute('update swisspairings set playerbid = (%s), paired = true where playeraid != 0 and paired = false and completed = false and matchid = 0 and playerbid = 0 RETURNING playerbid;', (playerId,))
-        updatedPlayerId = cursor.fetchone()
-        if updatedPlayerId == None:
-            cursor.execute('insert into swisspairings(tournamentid, playeraid, playerbid, paired, completed, matchid) values (1,(%s),0, false, false, 0);', (playerId,))
+        cursor.execute('insert into pairings(tournamentid,draw,round,playerid,paired,completed,matchid) values(1,case when (select count(id) from pairings p '
+                       ' where p.paired = false and p.completed = false and p.matchid = 0) = 1 then (select max(p.draw) from pairings p) '
+                       ' else (select (case when max(p.draw) isnull then 1 else (max(p.draw) + 1) end) from pairings p) end,1,(%s),false,false,0);', (playerId,))
+        cursor.execute('update pairings set paired = true where id in (select pairings.id from pairings join pairings p on p.draw = pairings.draw '
+                       ' group by pairings.id having count(pairings.draw) = 2) and paired=false;')
         connection.commit()
     except psycopg2.DatabaseError, e:
         print 'An error occurred registering a player %s' % e
@@ -170,25 +171,33 @@ def reportMatch(winner, loser):
                        ,{'player' : winner,'match' : matchId, 'result' : 'W' })
         cursor.execute('insert into matchplayers(matchid, playerid,result) values(%(match)s, %(player)s, (select type from resulttypes where type = %(result)s limit 1));'
                        ,{'player' : loser,'match' : matchId, 'result' : 'L' })
-                       
-##        cursor.execute('insert into matches(tournamentid, resulttypeid, winnerplayerid, loserplayerid) VALUES (1,(select id from resulttypes where name = %(standard)s), '
-##                       '%(winner)s, %(loser)s) RETURNING id;', {'winner' : winner,'loser' : loser, 'standard' : 'Standard'})
-##        matchId = cursor.fetchone()
-##        cursor.execute('update swisspairings set completed = true, matchid = %(matchid)s where tournamentid = 1 and paired = true and (playerbid = %(winner)s or playeraid = %(winner)s) '
-##                       ' and (playerbid = %(loser)s or playeraid = %(loser)s) and matchid = 0',
-##                       {'winner' : winner,'loser' : loser, 'matchid' : matchId })
-##        cursor.execute('update playerstandings set wins = wins + 1 where playerId = (%s)', (winner,))
-##        cursor.execute('update playerstandings set losses = losses + 1 where playerId = (%s)', (loser,))
-##        cursor.execute('update playerstandings set standing = newstanding from ( '
-##                       ' select id, row_number() over (order by win_ratio desc) as newstanding from ( '
-##                       ' select distinct id, ((ps_b.wins  + ps_b.byes + (ps_b.ties/2)) / (case when (ps_b.losses + (ps_b.ties/2)) = 0 then 1 else (ps_b.losses + (ps_b.ties/2)) end)) win_ratio '
-##                       ' from playerstandings ps_b order by win_ratio desc ) as win_loss) as standings'
-##                       ' where standings.id = playerstandings.id')
+
+        cursor.execute('update pairings set completed = true, matchid = %(match)s where playerid = %(player)s and paired = true and matchid = 0 and round = (select max(round) from pairings);'
+                       ,{'player' : winner,'match' : matchId})
+        cursor.execute('update pairings set completed = true, matchid = %(match)s where playerid = %(player)s and paired = true and matchid = 0 and round = (select max(round) from pairings);'
+                       ,{'player' : loser,'match' : matchId})
+
+        cursor.execute('update playerstandings set '
+                       ' wins = (select count(m.id) from matches m join matchplayers mp on mp.matchid = m.id where mp.playerid = %(player)s and mp.result = %(wins)s), '
+                       ' losses = (select count(m.id) from matches m join matchplayers mp on mp.matchid = m.id where mp.playerid = %(player)s and mp.result = %(losses)s), '
+                       ' ties = (select count(m.id) from matches m join matchplayers mp on mp.matchid = m.id where mp.playerid = %(player)s and mp.result = %(ties)s), '
+                       ' byes = (select count(m.id) from matches m join matchplayers mp on mp.matchid = m.id where mp.playerid = %(player)s and mp.result = %(byes)s) '
+                       ' where playerid = %(player)s;'
+                       ,{'player' : winner, 'wins' : 'W', 'losses' : 'L','ties' : 'T', 'byes' : 'B'})
+
+        cursor.execute('update playerstandings set '
+                       ' wins = (select count(m.id) from matches m join matchplayers mp on mp.matchid = m.id where mp.playerid = %(player)s and mp.result = %(wins)s), '
+                       ' losses = (select count(m.id) from matches m join matchplayers mp on mp.matchid = m.id where mp.playerid = %(player)s and mp.result = %(losses)s), '
+                       ' ties = (select count(m.id) from matches m join matchplayers mp on mp.matchid = m.id where mp.playerid = %(player)s and mp.result = %(ties)s), '
+                       ' byes = (select count(m.id) from matches m join matchplayers mp on mp.matchid = m.id where mp.playerid = %(player)s and mp.result = %(byes)s) where playerid = %(player)s;'
+                       ,{'player' : loser, 'wins' : 'W', 'losses' : 'L','ties' : 'T', 'byes' : 'B'})
+
+        cursor.execute('update playerstandings set standing = newstanding from ( '
+                       ' select id, row_number() over (order by win_ratio desc) as newstanding from ( '
+                       ' select distinct id, ((ps_b.wins  + ps_b.byes + (ps_b.ties/2)) / (case when (ps_b.losses + (ps_b.ties/2)) = 0 then 1 else (ps_b.losses + (ps_b.ties/2)) end)) win_ratio '
+                       ' from playerstandings ps_b order by win_ratio desc ) as win_loss) as standings'
+                       ' where standings.id = playerstandings.id')   
         connection.commit()
-        #Get available players to pair against
-##        setNextPairing(winner,cursor,connection)
-##        setNextPairing(loser,cursor,connection)
-        #connection.commit()
     except psycopg2.DatabaseError, e:
         print 'An error occurred reporting a match %s' % e
     finally:
@@ -216,13 +225,13 @@ def swissPairings():
     try:
         connection = connect()
         cursor = connection.cursor()
-        cursor.execute('delete from swisspairings where playerbid = 0 and paired = false and completed = false and matchid = 0;')
+        #cursor.execute('delete from swisspairings where playerbid = 0 and paired = false and completed = false and matchid = 0;')
         connection.commit()
-        cursor.execute('select p.id id1 ,p.fullname name1, p2.id id2, p2.fullname name2 from swisspairings sp join players p on p.id = sp.playeraid join players p2 on p2.id = sp.playerbid '
-                       ' where paired = true and completed = false and matchid = 0')
-        rows = cursor.fetchall()
-        for row in rows:
-            pairings.append(row)
+##        cursor.execute('select p.id id1 ,p.fullname name1, p2.id id2, p2.fullname name2 from swisspairings sp join players p on p.id = sp.playeraid join players p2 on p2.id = sp.playerbid '
+##                       ' where paired = true and completed = false and matchid = 0')
+##        rows = cursor.fetchall()
+##        for row in rows:
+##            pairings.append(row)
         return pairings
     except psycopg2.DatabaseError, e:
         print 'An error occurred getting next list of parings %s' % e

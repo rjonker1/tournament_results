@@ -41,11 +41,12 @@ Id SERIAL primary key not null,
 FullName text not null);
 
 --4. Swiss Pairing table to store the pairings of players for each tournament
-create table SwissPairings(
+create table Pairings(
 Id SERIAL primary key not null,
 TournamentId int not null,
-PlayerAId int not null,
-PlayerBId int not null,
+Draw int,
+Round int,
+PlayerId int DEFAULT 0 not null,
 Paired boolean DEFAULT false not null,
 Completed boolean DEFAULT false not null,
 MatchId int DEFAULT 0 not null);
@@ -68,7 +69,7 @@ TournamentId int not null);
 
 --7. Holds results for each match
 create table MatchPlayers(
-id SERIAL primary key not null,
+Id SERIAL primary key not null,
 MatchId int not null,
 PlayerId int not null,
 Result char(1))
