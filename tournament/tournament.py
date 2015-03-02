@@ -18,6 +18,7 @@ def deleteMatches():
     try:
         connection = connect()
         cursor = connection.cursor()
+        cursor.execute('truncate matchPlayers')
         cursor.execute('truncate matches')
         connection.commit()
     except psycopg2.DatabaseError, e:
@@ -33,9 +34,9 @@ def deletePlayers():
     try:
         connection = connect()
         cursor = connection.cursor()
-        cursor.execute('truncate players')
-        cursor.execute('truncate playerstandings')
         cursor.execute('truncate swisspairings')
+        cursor.execute('truncate playerstandings')
+        cursor.execute('truncate players')
         connection.commit()
     except psycopg2.DatabaseError, e:
         print 'An error occurred deleting players %s' % e
@@ -105,8 +106,8 @@ def playerStandings():
     try:
         connection = connect()
         cursor = connection.cursor()
-        cursor.execute('select p.id,p.fullname,(select count(mw.winnerplayerid) from matches mw where mw.winnerplayerid = p.id) wins, ((select count(mw.winnerplayerid)'
-                       'from matches mw where mw.winnerplayerid = p.id) + (select count(mw.loserplayerid) from matches mw where mw.loserplayerid = p.id)) matches from players p;')
+        cursor.execute('select p.id, p.fullname, (select count(mp.playerid) from matchplayers mp join resulttypes r on r.type = mp.result where mp.playerid = p.id and r.type = (%s)) wins, '
+                       ' (select count(m.id) from matches m join matchplayers mp on mp.matchid = m.id where mp.playerid = p.id) matches from players p;', ('W'))
         rows = cursor.fetchall()
         for row in rows:
             standings.append(row)
@@ -163,23 +164,30 @@ def reportMatch(winner, loser):
     try:
         connection = connect()
         cursor = connection.cursor()
-        cursor.execute('insert into matches(tournamentid, resulttypeid, winnerplayerid, loserplayerid) VALUES (1,(select id from resulttypes where name = %(standard)s), '
-                       '%(winner)s, %(loser)s) RETURNING id;', {'winner' : winner,'loser' : loser, 'standard' : 'Standard'})
+        cursor.execute('insert into matches(tournamentid)values (1)RETURNING id;')
         matchId = cursor.fetchone()
-        cursor.execute('update swisspairings set completed = true, matchid = %(matchid)s where tournamentid = 1 and paired = true and (playerbid = %(winner)s or playeraid = %(winner)s) '
-                       ' and (playerbid = %(loser)s or playeraid = %(loser)s) and matchid = 0',
-                       {'winner' : winner,'loser' : loser, 'matchid' : matchId })
-        cursor.execute('update playerstandings set wins = wins + 1 where playerId = (%s)', (winner,))
-        cursor.execute('update playerstandings set losses = losses + 1 where playerId = (%s)', (loser,))
-        cursor.execute('update playerstandings set standing = newstanding from ( '
-                       ' select id, row_number() over (order by win_ratio desc) as newstanding from ( '
-                       ' select distinct id, ((ps_b.wins  + ps_b.byes + (ps_b.ties/2)) / (case when (ps_b.losses + (ps_b.ties/2)) = 0 then 1 else (ps_b.losses + (ps_b.ties/2)) end)) win_ratio '
-                       ' from playerstandings ps_b order by win_ratio desc ) as win_loss) as standings'
-                       ' where standings.id = playerstandings.id')
+        cursor.execute('insert into matchplayers(matchid, playerid,result) values(%(match)s, %(player)s, (select type from resulttypes where type = %(result)s limit 1));'
+                       ,{'player' : winner,'match' : matchId, 'result' : 'W' })
+        cursor.execute('insert into matchplayers(matchid, playerid,result) values(%(match)s, %(player)s, (select type from resulttypes where type = %(result)s limit 1));'
+                       ,{'player' : loser,'match' : matchId, 'result' : 'L' })
+                       
+##        cursor.execute('insert into matches(tournamentid, resulttypeid, winnerplayerid, loserplayerid) VALUES (1,(select id from resulttypes where name = %(standard)s), '
+##                       '%(winner)s, %(loser)s) RETURNING id;', {'winner' : winner,'loser' : loser, 'standard' : 'Standard'})
+##        matchId = cursor.fetchone()
+##        cursor.execute('update swisspairings set completed = true, matchid = %(matchid)s where tournamentid = 1 and paired = true and (playerbid = %(winner)s or playeraid = %(winner)s) '
+##                       ' and (playerbid = %(loser)s or playeraid = %(loser)s) and matchid = 0',
+##                       {'winner' : winner,'loser' : loser, 'matchid' : matchId })
+##        cursor.execute('update playerstandings set wins = wins + 1 where playerId = (%s)', (winner,))
+##        cursor.execute('update playerstandings set losses = losses + 1 where playerId = (%s)', (loser,))
+##        cursor.execute('update playerstandings set standing = newstanding from ( '
+##                       ' select id, row_number() over (order by win_ratio desc) as newstanding from ( '
+##                       ' select distinct id, ((ps_b.wins  + ps_b.byes + (ps_b.ties/2)) / (case when (ps_b.losses + (ps_b.ties/2)) = 0 then 1 else (ps_b.losses + (ps_b.ties/2)) end)) win_ratio '
+##                       ' from playerstandings ps_b order by win_ratio desc ) as win_loss) as standings'
+##                       ' where standings.id = playerstandings.id')
         connection.commit()
         #Get available players to pair against
-        setNextPairing(winner,cursor,connection)
-        setNextPairing(loser,cursor,connection)
+##        setNextPairing(winner,cursor,connection)
+##        setNextPairing(loser,cursor,connection)
         #connection.commit()
     except psycopg2.DatabaseError, e:
         print 'An error occurred reporting a match %s' % e
