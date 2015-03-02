@@ -12,7 +12,7 @@ def connect():
     This connection must point to a database on your machine
 
     """
-    return psycopg2.connect("dbname=tournament")    
+    return psycopg2.connect("dbname=tournament")
 
 def deleteMatches():
     """Remove all the match records from the database."""

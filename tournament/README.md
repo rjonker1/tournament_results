@@ -11,7 +11,7 @@
 	*	Be sure to run the 'Seed Data' section at the end of the script file
 
 ### Executing the Code ###
-*	In the tournament.py file, update the connect() function connection property to point to a database on your machine (i.e. update this: psycopg2.connect("dbname=tournament") )
+*	IMPORTANT: In the tournament.py file, update the connect() function connection property to point to a database on your machine (i.e. update this: psycopg2.connect("dbname=tournament") )
 *	Open the tournament_test.py file using python's shell. All tests should pass
 
 ### Additional Information ###
